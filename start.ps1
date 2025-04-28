@@ -7,7 +7,7 @@
   The fixed leading octets of your IP address (e.g. '192.168', '10.0.1.5', etc.).
   Must consist of 1–3 octets separated by dots. Default: '120.96.54'
 .PARAMETER Interval
-  Seconds between IP rotations. Default: 60
+  Seconds between IP rotations. Default: 1200
 .PARAMETER PrefixLength
   Subnet prefix length (e.g., 24 for 255.255.255.0). Default: 24
 .PARAMETER Gateway
@@ -18,7 +18,7 @@
 param(
   [ValidatePattern('^(\d{1,3}\.){0,2}\d{1,3}$')]
   [string]   $Prefix       = '120.96.54',
-  [int]      $Interval     = 60,
+  [int]      $Interval     = 1200,
   [int]      $PrefixLength = 24,
   [string]   $Gateway      = '120.96.54.254',
   [string[]] $DnsServers   = @('120.96.35.1','120.96.36.1')
@@ -73,7 +73,8 @@ function Restore-Original {
       -InterfaceIndex  $ifIndex `
       -IPAddress       $ip.IPAddress `
       -PrefixLength    $ip.PrefixLength `
-      -DefaultGateway  $origRoute.NextHop
+      -DefaultGateway  $origRoute.NextHop `
+      | Out-Null
   }
   # Restore DNS servers
   Write-Host "  Restoring DNS: $($origDNS.ServerAddresses -join ', ')"
@@ -118,12 +119,12 @@ try {
     Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix '0.0.0.0/0' `
       -Confirm:$false -ErrorAction SilentlyContinue
 
-    Write-Host "Assigning $newIP/$PrefixLength via $Gateway"
     New-NetIPAddress `
       -InterfaceIndex  $ifIndex `
       -IPAddress       $newIP `
       -PrefixLength    $PrefixLength `
-      -DefaultGateway  $Gateway
+      -DefaultGateway  $Gateway `
+      | Out-Null
 
     Write-Host "Setting DNS servers: $($DnsServers -join ', ')"
     Set-DnsClientServerAddress `
