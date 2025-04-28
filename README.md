@@ -33,7 +33,7 @@
 ```powershell
 $scriptContent = Invoke-RestMethod 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1'
 $scriptBlock = [ScriptBlock]::Create($scriptContent)
-& $scriptBlock -Interval 30 -Prefix '192.168.1' -PrefixLength 24 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4'
+& $scriptBlock -Interval 1200 -Prefix '192.168.1' -PrefixLength 24 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4'
 ```
 
 Or simply (defaults):
@@ -44,7 +44,7 @@ irm 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/s
 
 ### Linux (Bash)
 ```bash
-curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/main/start.sh | sudo bash -s -- -i 30 -p "192.168.1" -l 24 -g "192.168.1.1" -d "8.8.8.8,8.8.4.4"
+curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/main/start.sh | sudo bash -s -- -i 1200 -p "192.168.1" -l 24 -g "192.168.1.1" -d "8.8.8.8,8.8.4.4"
 ```
 
 Or simply (defaults):
