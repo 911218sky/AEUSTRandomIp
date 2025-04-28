@@ -1,41 +1,82 @@
-# AEUST Random Ip
-- Runs with elevated (Administrator) privileges.  
-- Automatically selects the first active **physical** network adapter (excludes Hyper-V, Tailscale, etc.).  
-- Picks a random unused IP on your specified subnet (up to 50 attempts).  
-- Clears existing IPv4 addresses and default routes, then assigns the new static IP, gateway, and DNS servers.  
-- Repeats the switch at a user-defined interval (default: 60 seconds).
+# 🚀 Random IP
 
-## Requirements
+Automatically rotates your IPv4 address on the first active physical interface at a configurable interval.
 
-- Windows 10 / 11 or Windows Server  
-- PowerShell 5.1 or newer  
-- Administrator privileges  
+---
 
-## Parameters
+## ✨ Features
 
-| Name          | Type        | Default                         | Description                                          |
-| ------------- | ----------- | ------------------------------- | ---------------------------------------------------- |
-| `Interval`    | `[int]`     | `60`                            | Time (seconds) between IP rotations                  |
-| `PrefixLength`| `[int]`     | `24`                            | Subnet prefix length (e.g. 24 for 255.255.255.0)     |
-| `Gateway`     | `[string]`  | `'120.96.54.254'`               | Default gateway IP                                   |
-| `DnsServers`  | `[string[]]`| `@('120.96.35.1','120.96.36.1')`| One or more DNS server IPs                           |
+- 🛡️ Runs with Administrator/root privileges  
+- 🔍 Selects the first active **physical** network adapter (excludes VMs)  
+- 🎲 Picks a random unused IP in your subnet (up to 50 attempts)  
+- ♻️ Flushes old IPv4 addresses and default routes, then applies new IP, gateway, and DNS  
+- 🔄 Repeats every _Interval_ seconds (default: 60)
 
-## Examples
+---
 
-1. **Customize**, use gateway `192.168.1.1` and Google DNS:
+## 🖥️ Requirements
 
-   ```
-   .\start.ps1 -Interval 30 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4'
-   ```
+- **Windows**: PowerShell 5.1+ with Administrator privileges  
+- **Linux**: Bash with `ip`, `ping`, `curl`, and root/sudo rights
 
-2. **Windows**:
+---
 
-   ```
-   irm 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1' | iex
-   ```
+## ⚙️ Parameters
 
-## Troubleshooting
+| Name           | Type        | Default                         | Description                                    |
+| -------------- | ----------- | ------------------------------- | ---------------------------------------------- |
+| `Interval`     | `int`       | `60`                            | Seconds between IP rotations                   |
+| `PrefixLength` | `int`       | `24`                            | Subnet mask length (e.g. 24 for 255.255.255.0) |
+| `Gateway`      | `string`    | `120.96.54.254`                 | Default gateway IP                             |
+| `DnsServers`   | `string[]`  | `120.96.35.1,120.96.36.1`       | One or more DNS server IPs                     |
 
-- Make sure you run PowerShell **as Administrator**.  
-- Confirm you have an active **physical** network adapter up and connected.  
-- If nothing happens, check the script output for errors regarding IP assignment or adapter selection.
+---
+
+## 📝 Examples
+
+### 🪟 Windows
+
+Fetch and execute with optional parameters:
+
+```powershell
+Invoke-RestMethod 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1' |
+  Invoke-Expression -ArgumentList '-Interval',30,'-PrefixLength',24,'-Gateway','192.168.1.1','-DnsServers','8.8.8.8','8.8.4.4'
+```
+
+Or the shorter alias form:
+
+```powershell
+irm 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1' | iex
+```
+
+---
+
+### 🐧 Linux
+
+Use `curl` and pipe into `bash`; flags after `--` are passed to `start.sh`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.sh \
+  | sudo bash -s -- -i 30 -p 24 -g 192.168.1.1 -d 8.8.8.8,8.8.4.4
+```
+
+Or simply (defaults):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.sh | sudo bash
+```
+
+**Flags:**
+
+- `-i`: interval (seconds)  
+- `-p`: prefix length  
+- `-g`: gateway IP  
+- `-d`: comma-separated DNS servers  
+
+---
+
+## 🛠️ Troubleshooting
+
+- **Windows**: Ensure PowerShell is run as Administrator.  
+- **Linux**: Run under root or with `sudo`, and verify your interface state.  
+- Check script output for adapter selection or IP assignment errors.
