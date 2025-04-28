@@ -25,6 +25,7 @@ Automatically rotates your IPv4 address on the first active physical interface a
 
 | Name           | Type        | Default                         | Description                                    |
 | -------------- | ----------- | ------------------------------- | ---------------------------------------------- |
+| `Prefix`       | `string`    | `120.96.54`                     | Fixed leading octets (e.g. '192.168', '10.0') |
 | `Interval`     | `int`       | `60`                            | Seconds between IP rotations                   |
 | `PrefixLength` | `int`       | `24`                            | Subnet mask length (e.g. 24 for 255.255.255.0) |
 | `Gateway`      | `string`    | `120.96.54.254`                 | Default gateway IP                             |
