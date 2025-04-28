@@ -73,13 +73,6 @@ Or simply (defaults):
 curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.sh | sudo bash
 ```
 
-**Flags:**
-
-- `-i`: interval (seconds)  
-- `-p`: prefix length  
-- `-g`: gateway IP  
-- `-d`: comma-separated DNS servers  
-
 ---
 
 ## 🛠️ Troubleshooting
