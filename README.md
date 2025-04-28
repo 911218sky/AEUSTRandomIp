@@ -22,13 +22,13 @@
 
 ## Examples
 
-1. **Every 30 seconds**, use gateway `192.168.1.1` and Google DNS:
+1. **Customize**, use gateway `192.168.1.1` and Google DNS:
 
    ```
    .\start.ps1 -Interval 30 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4'
    ```
 
-2. **Remote one-liner** via RAW URL:
+2. **Windows**:
 
    ```
    irm 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1' | iex
@@ -39,8 +39,3 @@
 - Make sure you run PowerShell **as Administrator**.  
 - Confirm you have an active **physical** network adapter up and connected.  
 - If nothing happens, check the script output for errors regarding IP assignment or adapter selection.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).  
-Feel free to fork, customize, and contribute back!
