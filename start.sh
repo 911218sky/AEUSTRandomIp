@@ -1,227 +1,116 @@
 #!/bin/bash
-#
-# IP Rotator - Randomly switches the local network adapter IPv4 address
-# at a configurable interval, saving and restoring original settings on exit,
-# and displays a real-time countdown until the next switch.
 
-# Default values
-PREFIX="120.96.54"
-INTERVAL=1200
+# Network IP Rotation Script
+# Randomly switches the network adapter IPv4 address at a configurable interval
+
+# Default configuration
+PREFIX="192.168.1"
+INTERVAL=600
 PREFIX_LENGTH=24
-GATEWAY="120.96.54.254"
-DNS_SERVERS=("120.96.35.1" "120.96.36.1")
-
-# Function to display usage
-show_help() {
-  echo "Usage: $0 [options]"
-  echo "Options:"
-  echo "  -p, --prefix PREFIX        Fixed leading octets of IP (e.g. '192.168')"
-  echo "                              Default: $PREFIX"
-  echo "  -i, --interval SECONDS     Seconds between IP rotations"
-  echo "                              Default: $INTERVAL"
-  echo "  -l, --prefix-length LENGTH Subnet prefix length (e.g. 24 for 255.255.255.0)"
-  echo "                              Default: $PREFIX_LENGTH"
-  echo "  -g, --gateway IP           Default gateway IP address"
-  echo "                              Default: $GATEWAY"
-  echo "  -d, --dns-servers IPS      Comma-separated DNS server IPs"
-  echo "                              Default: ${DNS_SERVERS[*]}"
-  echo "  -h, --help                 Show this help message"
-}
+GATEWAY="192.168.1.1"
+DNS_SERVERS=("8.8.8.8" "8.8.4.4")
+TEST_DNS_SERVERS=("8.8.8.8")
+CONNECTIVITY_WAIT_TIME=10
 
 # Parse command line arguments
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -p|--prefix) PREFIX="$2"; shift 2 ;;
-    -i|--interval) INTERVAL="$2"; shift 2 ;;
-    -l|--prefix-length) PREFIX_LENGTH="$2"; shift 2 ;;
-    -g|--gateway) GATEWAY="$2"; shift 2 ;;
-    -d|--dns-servers) IFS=',' read -r -a DNS_SERVERS <<< "$2"; shift 2 ;;
-    -h|--help) show_help; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; show_help; exit 1 ;;
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --prefix)
+      PREFIX="$2"
+      shift 2
+      ;;
+    --interval)
+      INTERVAL="$2"
+      shift 2
+      ;;
+    --prefix-length)
+      PREFIX_LENGTH="$2"
+      shift 2
+      ;;
+    --gateway)
+      GATEWAY="$2"
+      shift 2
+      ;;
+    --dns-servers)
+      IFS=',' read -ra DNS_SERVERS <<< "$2"
+      shift 2
+      ;;
+    --test-dns)
+      IFS=',' read -ra TEST_DNS_SERVERS <<< "$2"
+      shift 2
+      ;;
+    --wait-time)
+      CONNECTIVITY_WAIT_TIME="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
   esac
 done
 
-# Validate prefix format (1-3 octets)
-if ! [[ "$PREFIX" =~ ^([0-9]{1,3}\.){0,2}[0-9]{1,3}$ ]]; then
-  echo "Error: Prefix must consist of 1-3 octets separated by dots." >&2
-  exit 1
-fi
-
-# Count number of octets in prefix
-IFS='.' read -r -a FIXED_OCTETS <<< "$PREFIX"
-DYNAMIC_COUNT=$((4 - ${#FIXED_OCTETS[@]}))
-
 # Check for root privileges
-if [ "$(id -u)" -ne 0 ]; then
-  echo "This script requires root privileges." >&2
-  echo "Please run with sudo or as root." >&2
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 
+   exit 1
+fi
+
+# Parse prefix
+IFS='.' read -ra PREFIX_OCTETS <<< "$PREFIX"
+if [[ ${#PREFIX_OCTETS[@]} -gt 3 ]]; then
+  echo "Prefix may contain at most 3 octets."
   exit 1
 fi
 
-# Detect OS
-OS_TYPE=$(uname -s)
-echo "Detected OS: $OS_TYPE"
+# Calculate dynamic octets needed
+DYNAMIC_COUNT=$((4 - ${#PREFIX_OCTETS[@]}))
 
-# Select active network interface based on OS
-case "$OS_TYPE" in
-  Linux)
-    INTERFACE=$(ip -o link show | grep 'state UP' | grep -v 'virbr\|docker\|veth\|lo\|tun\|tailscale' | head -n1 | awk -F': ' '{print $2}')
-    
-    # Detect network management tool
-    if command -v nmcli >/dev/null 2>&1; then
-      NETWORK_TOOL="NetworkManager"
-    else
-      NETWORK_TOOL="legacy"
-    fi
-    ;;
-    
-  Darwin)  # macOS
-    INTERFACE=$(networksetup -listallhardwareports | grep -A1 "Wi-Fi\|Ethernet" | grep "Device" | head -1 | awk '{print $2}')
-    NETWORK_TOOL="networksetup"
-    SERVICE=$(networksetup -listallhardwareports | grep -B1 "Device: $INTERFACE" | head -1 | cut -d: -f2 | tr -d ' ')
-    ;;
-    
-  *)
-    echo "Unsupported operating system: $OS_TYPE" >&2
-    exit 1
-    ;;
-esac
+# Find the network interface
+INTERFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -n1)
+if [[ -z "$INTERFACE" ]]; then
+  echo "No active network interface found."
+  exit 1
+fi
 
 echo "Using interface: $INTERFACE"
-echo "Using network tool: $NETWORK_TOOL"
 
 # Save original network settings
-save_original_settings() {
-  case "$OS_TYPE" in
-    Linux)
-      if [ "$NETWORK_TOOL" = "NetworkManager" ]; then
-        CONNECTION=$(nmcli -t -f NAME,DEVICE connection show --active | grep ":$INTERFACE" | cut -d: -f1)
-        echo "Saving NetworkManager connection: $CONNECTION"
-      fi
-      
-      ORIG_IP=$(ip -4 addr show dev "$INTERFACE" | grep 'inet ' | awk '{print $2}')
-      ORIG_GATEWAY=$(ip route | grep default | grep "$INTERFACE" | awk '{print $3}')
-      
-      # Backup DNS configuration
-      cp /etc/resolv.conf /etc/resolv.conf.bak 2>/dev/null
-      ORIG_DNS=$(grep nameserver /etc/resolv.conf | awk '{print $2}')
-      ;;
-      
-    Darwin)
-      ORIG_IP=$(ifconfig "$INTERFACE" | grep 'inet ' | awk '{print $2}')
-      ORIG_NETMASK=$(ifconfig "$INTERFACE" | grep 'inet ' | awk '{print $4}')
-      ORIG_GATEWAY=$(route -n get default | grep gateway | awk '{print $2}')
-      ORIG_DNS=$(networksetup -getdnsservers "$SERVICE")
-      ;;
-  esac
-}
+ORIG_IP=$(ip -o -4 addr show dev $INTERFACE | awk '{print $4}' | cut -d/ -f1)
+ORIG_PREFIX=$(ip -o -4 addr show dev $INTERFACE | awk '{print $4}' | cut -d/ -f2)
+ORIG_GATEWAY=$(ip -o -4 route show default | awk '{print $3}')
+ORIG_DNS=$(grep "nameserver" /etc/resolv.conf | awk '{print $2}')
 
-# Save original settings
-save_original_settings
+echo "Original IP: $ORIG_IP/$ORIG_PREFIX"
+echo "Original Gateway: $ORIG_GATEWAY"
+echo "Original DNS: $ORIG_DNS"
 
-echo "Original settings:"
-echo "  Interface: $INTERFACE"
-echo "  IP: $ORIG_IP"
-echo "  Gateway: $ORIG_GATEWAY"
-echo "  DNS: ${ORIG_DNS[*]}"
-
-# Function to restore original network settings
+# Function to restore original settings
 restore_original() {
   echo -e "\nRestoring original network settings..."
-
-  case "$OS_TYPE" in
-    Linux)
-      if [ "$NETWORK_TOOL" = "NetworkManager" ] && [ -n "$CONNECTION" ]; then
-        echo "  Reconnecting to original NetworkManager connection"
-        nmcli connection up "$CONNECTION"
-      else
-        # Flush current IP configuration
-        ip addr flush dev "$INTERFACE"
-        
-        # Restore original IP and route
-        echo "  Restoring IP $ORIG_IP"
-        ip addr add "$ORIG_IP" dev "$INTERFACE"
-        ip route add default via "$ORIG_GATEWAY" dev "$INTERFACE"
-      fi
-      
-      # Restore DNS
-      if [ -f /etc/resolv.conf.bak ]; then
-        echo "  Restoring DNS configuration"
-        mv /etc/resolv.conf.bak /etc/resolv.conf
-      fi
-      ;;
-      
-    Darwin)
-      echo "  Restoring IP configuration for $SERVICE"
-      networksetup -setmanual "$SERVICE" "$ORIG_IP" "$ORIG_NETMASK" "$ORIG_GATEWAY"
-      
-      echo "  Restoring DNS configuration"
-      if [[ "$ORIG_DNS" == *"There aren't any DNS Servers"* ]]; then
-        networksetup -setdnsservers "$SERVICE" "Empty"
-      else
-        networksetup -setdnsservers "$SERVICE" "${ORIG_DNS[@]}"
-      fi
-      ;;
-  esac
+  
+  # Remove current IP configuration
+  ip addr flush dev $INTERFACE
+  
+  # Restore original IP and route
+  ip addr add $ORIG_IP/$ORIG_PREFIX dev $INTERFACE
+  ip route add default via $ORIG_GATEWAY dev $INTERFACE
+  
+  # Restore DNS (this is distribution-dependent)
+  if [[ -f /etc/resolv.conf.backup ]]; then
+    mv /etc/resolv.conf.backup /etc/resolv.conf
+  else
+    echo "Warning: Could not restore original DNS configuration."
+  fi
   
   echo "✅ Original settings restored."
 }
 
-# Trap CTRL+C and EXIT to restore settings
-trap restore_original INT TERM EXIT
+# Trap for cleanup on exit
+trap restore_original EXIT INT TERM
 
-# Function to set network configuration
-set_network_config() {
-  local ip="$1"
-  
-  case "$OS_TYPE" in
-    Linux)
-      if [ "$NETWORK_TOOL" = "NetworkManager" ]; then
-        # Create a temporary connection
-        echo "Creating temporary NetworkManager connection..."
-        nmcli connection delete "IP-Rotator" 2>/dev/null || true
-        nmcli connection add type ethernet con-name "IP-Rotator" ifname "$INTERFACE" \
-          ipv4.method manual ipv4.addresses "$ip/$PREFIX_LENGTH" \
-          ipv4.gateway "$GATEWAY" ipv4.dns "$(IFS=,; echo "${DNS_SERVERS[*]}")"
-        
-        # Activate the new connection
-        nmcli connection up "IP-Rotator"
-      else
-        # Traditional IP configuration
-        echo "Setting new IP: $ip/$PREFIX_LENGTH"
-        ip addr flush dev "$INTERFACE"
-        ip addr add "$ip/$PREFIX_LENGTH" dev "$INTERFACE"
-        
-        echo "Setting default gateway: $GATEWAY"
-        ip route add default via "$GATEWAY" dev "$INTERFACE"
-        
-        # Set DNS servers
-        echo "Setting DNS servers: ${DNS_SERVERS[*]}"
-        echo -n > /etc/resolv.conf
-        for dns in "${DNS_SERVERS[@]}"; do
-          echo "nameserver $dns" >> /etc/resolv.conf
-        done
-      fi
-      ;;
-      
-    Darwin)
-      # Convert CIDR prefix length to netmask
-      netmask=""
-      case $PREFIX_LENGTH in
-        8) netmask="255.0.0.0" ;;
-        16) netmask="255.255.0.0" ;;
-        24) netmask="255.255.255.0" ;;
-        *) echo "Converting prefix length $PREFIX_LENGTH to netmask"; netmask="255.255.255.0" ;;
-      esac
-      
-      echo "Setting new IP: $ip/$PREFIX_LENGTH ($netmask)"
-      networksetup -setmanual "$SERVICE" "$ip" "$netmask" "$GATEWAY"
-      
-      echo "Setting DNS servers: ${DNS_SERVERS[*]}"
-      networksetup -setdnsservers "$SERVICE" "${DNS_SERVERS[@]}"
-      ;;
-  esac
-}
+# Backup resolv.conf
+cp /etc/resolv.conf /etc/resolv.conf.backup
 
 # Main rotation loop
 while true; do
@@ -229,55 +118,94 @@ while true; do
   attempt=0
   while true; do
     ((attempt++))
-    if [ "$attempt" -gt 50 ]; then
-      echo "Error: Unable to find a free IP after 50 attempts." >&2
+    if [[ $attempt -gt 50 ]]; then
+      echo "Unable to find a free IP after 50 attempts."
       exit 1
     fi
     
     # Generate random octets
-    random_octets=""
+    random_octets=()
     for ((i=1; i<=DYNAMIC_COUNT; i++)); do
-      random_octet=$((RANDOM % 206 + 50))  # 50-255 range
-      random_octets="$random_octets.$random_octet"
+      random_octets+=($((RANDOM % 205 + 50)))
     done
     
-    # Remove leading dot if present
-    random_octets=${random_octets#.}
-    
-    # Combine prefix with random octets
-    if [ "$DYNAMIC_COUNT" -eq 1 ]; then
-      new_ip="$PREFIX.$random_octets"
-    else
-      new_ip="$PREFIX$random_octets"
-    fi
+    # Combine octets
+    new_ip="${PREFIX_OCTETS[*]}"
+    for octet in "${random_octets[@]}"; do
+      new_ip="$new_ip.$octet"
+    done
     
     echo "Checking $new_ip..."
     if ! ping -c 1 -W 1 "$new_ip" &>/dev/null; then
-      # IP is not in use, we can use it
-      break
+      break # IP not in use
     fi
   done
   
-  # Apply new network configuration
-  set_network_config "$new_ip"
+  # Test connectivity after assigning new IP
+  test_attempt=0
+  connectivity_ok=false
+  
+  while [[ "$connectivity_ok" = false && $test_attempt -lt 50 ]]; do
+    ((test_attempt++))
+    
+    echo "Configuring new IP $new_ip/$PREFIX_LENGTH..."
+    
+    # Remove current IP configuration
+    ip addr flush dev $INTERFACE
+    
+    # Add new IP and route
+    ip addr add $new_ip/$PREFIX_LENGTH dev $INTERFACE
+    ip route add default via $GATEWAY dev $INTERFACE
+    
+    # Set DNS servers
+    echo -n > /etc/resolv.conf
+    for dns in "${DNS_SERVERS[@]}"; do
+      echo "nameserver $dns" >> /etc/resolv.conf
+    done
+    
+    echo "Waiting $CONNECTIVITY_WAIT_TIME seconds before testing connectivity..."
+    sleep $CONNECTIVITY_WAIT_TIME
+    
+    echo "Testing connectivity to: ${TEST_DNS_SERVERS[*]}"
+    connectivity_ok=true
+    
+    for dns in "${TEST_DNS_SERVERS[@]}"; do
+      if ! ping -c 3 -W 1 "$dns" &>/dev/null; then
+        echo "Failed to connect to $dns"
+        connectivity_ok=false
+        break
+      fi
+    done
+    
+    if [[ "$connectivity_ok" = false ]]; then
+      echo "Connectivity test failed, trying a new IP..."
+      
+      # Generate new random octets
+      random_octets=()
+      for ((i=1; i<=DYNAMIC_COUNT; i++)); do
+        random_octets+=($((RANDOM % 205 + 50)))
+      done
+      
+      # Combine octets
+      new_ip="${PREFIX_OCTETS[*]}"
+      for octet in "${random_octets[@]}"; do
+        new_ip="$new_ip.$octet"
+      done
+    fi
+  done
+  
+  if [[ "$connectivity_ok" = false ]]; then
+    echo "Unable to find a free IP with connectivity after 50 attempts."
+    exit 1
+  fi
+  
   echo "✅ Switched to $new_ip"
   
   # Countdown until next switch
-  start_time=$(date +%s)
-  end_time=$((start_time + INTERVAL))
-  
-  while true; do
-    current_time=$(date +%s)
-    remaining=$((end_time - current_time))
-    
-    if [ "$remaining" -le 0 ]; then
-      break
-    fi
-    
-    mins=$((remaining / 60))
-    secs=$((remaining % 60))
-    printf "\rNext switch in %02d:%02d...   " "$mins" "$secs"
+  for ((i=1; i<=INTERVAL; i++)); do
+    percent=$((i * 100 / INTERVAL))
+    echo -ne "\rNext IP rotation in $((INTERVAL - i)) seconds... ($percent%) "
     sleep 1
   done
-  echo
+  echo -e "\nRotating IP address..."
 done

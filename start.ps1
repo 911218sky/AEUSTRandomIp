@@ -14,14 +14,22 @@
   Default gateway IP address. Default: 120.96.54.254
 .PARAMETER DnsServers
   Array of DNS server IP addresses. Default: 120.96.35.1,120.96.36.1
+.PARAMETER TestDnsServers
+  Array of IP addresses to test connectivity after assigning the new IP.
+  Default: @('8.8.8.8')
+.PARAMETER ConnectivityWaitTime
+  Number of seconds to wait before testing connectivity to DNS servers.
+  Default: 10
 #>
 param(
   [ValidatePattern('^(\d{1,3}\.){0,2}\d{1,3}$')]
   [string]   $Prefix       = '120.96.54',
-  [int]      $Interval     = 1200,
+  [int]      $Interval     = 600,
   [int]      $PrefixLength = 24,
   [string]   $Gateway      = '120.96.54.254',
-  [string[]] $DnsServers   = @('120.96.35.1','120.96.36.1')
+  [string[]] $DnsServers   = @('120.96.35.1','120.96.36.1'),
+  [string[]] $TestDnsServers = @('8.8.8.8'),
+  [int]      $ConnectivityWaitTime = 10
 )
 
 # Ensure running as Administrator
@@ -112,24 +120,55 @@ try {
 
     if ($attempt -gt 50) { break }
 
-    # Apply new IP, route, and DNS
-    Write-Host "Flushing old IPs and routes..."
-    Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 |
-      Remove-NetIPAddress -Confirm:$false
-    Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix '0.0.0.0/0' `
-      -Confirm:$false -ErrorAction SilentlyContinue
+    # Test connectivity to TestDnsServers after assigning new IP
+    $testAttempt = 0
+    do {
+      # Apply new IP, route, and DNS
+      Write-Host "Flushing old IPs and routes..."
+      Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 |
+        Remove-NetIPAddress -Confirm:$false
+      Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix '0.0.0.0/0' `
+        -Confirm:$false -ErrorAction SilentlyContinue
 
-    New-NetIPAddress `
-      -InterfaceIndex  $ifIndex `
-      -IPAddress       $newIP `
-      -PrefixLength    $PrefixLength `
-      -DefaultGateway  $Gateway `
-      | Out-Null
+      New-NetIPAddress `
+        -InterfaceIndex  $ifIndex `
+        -IPAddress       $newIP `
+        -PrefixLength    $PrefixLength `
+        -DefaultGateway  $Gateway `
+        | Out-Null
 
-    Write-Host "Setting DNS servers: $($DnsServers -join ', ')"
-    Set-DnsClientServerAddress `
-      -InterfaceIndex  $ifIndex `
-      -ServerAddresses $DnsServers
+      Write-Host "Setting DNS servers: $($DnsServers -join ', ')"
+      Set-DnsClientServerAddress `
+        -InterfaceIndex  $ifIndex `
+        -ServerAddresses $DnsServers
+
+      Write-Host "Waiting $ConnectivityWaitTime seconds before testing connectivity..."
+      Start-Sleep -Seconds $ConnectivityWaitTime
+
+      Write-Host "Testing connectivity to TestDnsServers: $($TestDnsServers -join ', ')"
+      $connectivityOk = $true
+      foreach ($dns in $TestDnsServers) {
+        if (-not (ping.exe -n 3 -w 1000 $dns | Select-String 'TTL=')) {
+          Write-Host "Failed to connect to $dns"
+          $connectivityOk = $false
+          break
+        }
+      }
+
+      if (-not $connectivityOk) {
+        Write-Host "Connectivity test failed, trying a new IP..."
+        $randomOctets = for ($i=1; $i -le $dynamicCount; $i++) {
+          Get-Random -Minimum 50 -Maximum 255
+        }
+        $newIP = ($fixedOctets + $randomOctets) -join '.'
+      }
+      $testAttempt++
+    } while (-not $connectivityOk -and $testAttempt -lt 50)
+
+    if (-not $connectivityOk) {
+      Write-Error "Unable to find a free IP with connectivity after 50 attempts."
+      break
+    }
 
     Write-Host "✅ Switched to $newIP"
 

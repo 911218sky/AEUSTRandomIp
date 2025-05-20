@@ -19,13 +19,15 @@
 
 ## ⚙️ Configuration Options
 
-| Parameter       | Default Value       | Description                          |
-|-----------------|---------------------|--------------------------------------|
-| `-Prefix`       | `120.96.54`         | Fixed IP segments (1-3 octets)       |
-| `-Interval`     | `1200` (20 mins)    | Rotation frequency in seconds        |
-| `-PrefixLength` | `24` (/24)          | Subnet mask length                   |
-| `-Gateway`      | `120.96.54.254`     | Default gateway IP                   |
-| `-DnsServers`   | `120.96.35.1, ...`  | Comma-separated DNS servers          |
+| Parameter              | Default Value       | Description                          |
+|-----------------------|---------------------|--------------------------------------|
+| `-Prefix`             | `120.96.54`         | Fixed IP segments (1-3 octets)       |
+| `-Interval`           | `600` (10 mins)     | Rotation frequency in seconds        |
+| `-PrefixLength`       | `24` (/24)          | Subnet mask length                   |
+| `-Gateway`            | `120.96.54.254`     | Default gateway IP                   |
+| `-DnsServers`         | `120.96.35.1, ...`  | Comma-separated DNS servers          |
+| `-TestDnsServers`     | `8.8.8.8`           | IPs to test connectivity after change |
+| `-ConnectivityWaitTime` | `10`              | Seconds to wait before testing        |
 
 ## 📥 Installation & Usage
 
@@ -33,7 +35,7 @@
 ```powershell
 $scriptContent = Invoke-RestMethod 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/start.ps1'
 $scriptBlock = [ScriptBlock]::Create($scriptContent)
-& $scriptBlock -Interval 1200 -Prefix '192.168.1' -PrefixLength 24 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4'
+& $scriptBlock -Interval 1200 -Prefix '192.168.1' -PrefixLength 24 -Gateway '192.168.1.1' -DnsServers '8.8.8.8','8.8.4.4' -TestDnsServers '1.1.1.1','8.8.8.8' -ConnectivityWaitTime 15
 ```
 
 Or simply (defaults):
@@ -44,7 +46,7 @@ irm 'https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/refs/heads/main/s
 
 ### Linux (Bash)
 ```bash
-curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/main/start.sh | sudo bash -s -- -i 1200 -p "192.168.1" -l 24 -g "192.168.1.1" -d "8.8.8.8,8.8.4.4"
+curl -sSL https://raw.githubusercontent.com/911218sky/AEUSTRandomIp/main/start.sh | sudo bash -s -- --interval 1200 --prefix "192.168.1" --prefix-length 24 --gateway "192.168.1.1" --dns-servers "8.8.8.8,8.8.4.4" --test-dns "1.1.1.1,8.8.8.8" --wait-time 15
 ```
 
 Or simply (defaults):
